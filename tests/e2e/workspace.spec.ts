@@ -13,6 +13,12 @@ import { defaultPreferences, type ServerSession } from '../../src/domain/connect
 import { defaultWorkspace } from '../../src/shared/workspace'
 import { prepareDrop, dropOn } from './fixtures/native-drop'
 import { preserveClipboard, restoreClipboard } from './fixtures/clipboard'
+import type {
+  WebsiteRecord,
+  WebsiteInput,
+  DeploymentHistory,
+  DeploymentProgress,
+} from '../../src/domain/websites/types'
 
 const sessions: ServerSession[] = ['Atlas', 'Orion'].map((name, i) => ({
   id: `00000000-0000-4000-8000-00000000000${i + 1}`,
@@ -49,11 +55,16 @@ async function launch(directory: string) {
   await expect(page.getByRole('button', { name: 'Connect to server', exact: true })).toBeEnabled()
   // Offline presentation fixtures only. The native preload and file-drop grant handler remain real.
   await app.evaluate(
-    ({ ipcMain, clipboard }, values) => {
+    ({ ipcMain, clipboard, BrowserWindow }, values) => {
       const fixture = {
         ...values,
         calls: [] as { route: string; input: Record<string, unknown> }[],
         shells: 0,
+        websites: [] as WebsiteRecord[],
+        websiteHistory: [] as DeploymentHistory[],
+        websitePlans: new Map<string, string>(),
+        websiteOperations: [] as DeploymentProgress[],
+        websiteFailNext: false,
       }
       Reflect.set(globalThis, '__desktopFixture', fixture)
       ipcMain.removeHandler('vps:invoke')
@@ -62,7 +73,150 @@ async function launch(directory: string) {
         async (_event, route: string, input: Record<string, unknown>) => {
           fixture.calls.push({ route, input })
           let value: unknown
-          if (route === 'clipboard.readText') value = await clipboard.readText()
+          if (route === 'websites.discover') {
+            const records = fixture.websites.filter((r) => r.scope === input.sessionId)
+            value = {
+              at: new Date().toISOString(),
+              warnings: ['Offline website presentation fixture'],
+              websites: records.length
+                ? records.map((r) => ({
+                    id: r.id,
+                    name: r.config.name,
+                    domain: r.config.domain,
+                    aliases: [],
+                    webServer: 'Registered',
+                    technology: r.config.strategy === 'static' ? 'Static assets' : 'Docker Compose',
+                    support: 'supported',
+                    https: true,
+                    projectPath: r.config.projectPath,
+                    record: r,
+                    services: [],
+                  }))
+                : [
+                    {
+                      id: 'discovered',
+                      name: 'Discovered website',
+                      domain: 'example.test',
+                      aliases: ['www.example.test'],
+                      webServer: 'Nginx',
+                      technology: 'Reverse proxy',
+                      support: 'import',
+                      https: true,
+                      services: [],
+                      configPath: '/etc/nginx/sites-available/example',
+                    },
+                  ],
+            }
+          } else if (route === 'websites.save') {
+            const record: WebsiteRecord = {
+              id: crypto.randomUUID(),
+              scope: input.sessionId as string,
+              config: input.config as WebsiteInput,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }
+            fixture.websites.push(record)
+            value = record
+          } else if (route === 'websites.operations')
+            value = fixture.websiteOperations.filter((o) => o.sessionId === input.sessionId)
+          else if (route === 'websites.pickSource')
+            value = { token: crypto.randomUUID(), name: 'fixture-project' }
+          else if (route === 'websites.prepare') {
+            const token = crypto.randomUUID()
+            fixture.websitePlans.set(token, input.websiteId as string)
+            const source = input.source as { kind: string; path?: string }
+            value = {
+              token,
+              websiteId: input.websiteId,
+              expiresAt: Date.now() + 600000,
+              method: input.method,
+              changes: { added: ['new.html'], changed: ['index.html'], removed: [], unchanged: 1 },
+              bytes: 42,
+              fileCount: 2,
+              services: [],
+              protected: ['uploads', '.env'],
+              blocked: source.path?.includes('unsafe') ? ['Unsafe source fixture'] : [],
+              warnings: ['Application rollback does not restore databases or media.'],
+              freeBytes: 1024 ** 3,
+            }
+          } else if (route === 'websites.history')
+            value = fixture.websiteHistory.filter(
+              (h) => h.scope === input.sessionId && h.websiteId === input.websiteId,
+            )
+          else if (route === 'websites.deploy' || route === 'websites.restore') {
+            const websiteId =
+              route === 'websites.deploy'
+                ? fixture.websitePlans.get(input.token as string)!
+                : (input.websiteId as string)
+            const id = crypto.randomUUID(),
+              now = new Date().toISOString()
+            const history: DeploymentHistory = {
+              id,
+              websiteId,
+              scope: input.sessionId as string,
+              action: route === 'websites.deploy' ? 'deploy' : 'restore',
+              startedAt: now,
+              status: 'running',
+              message: 'Preparing fixture deployment',
+              backupVerified: true,
+              backupBytes: 10,
+              backupHash: 'fixture',
+              previousImages: {},
+              configHash: 'fixture',
+              log: ['Verified source backup'],
+            }
+            fixture.websiteHistory.push(history)
+            const progress: DeploymentProgress = {
+              id,
+              websiteId,
+              sessionId: input.sessionId as string,
+              state: 'running',
+              stage: 'Staging release',
+              startedAt: now,
+              transferred: 0,
+              total: 42,
+              log: ['Verified source backup'],
+              cancellable: true,
+            }
+            fixture.websiteOperations.push(progress)
+            BrowserWindow.getAllWindows()[0].webContents.send('vps:event', {
+              type: 'website-deployment',
+              operation: progress,
+            })
+            setTimeout(() => {
+              history.status = fixture.websiteFailNext
+                ? 'failed'
+                : route === 'websites.deploy'
+                  ? 'completed'
+                  : 'restored'
+              fixture.websiteFailNext = false
+              history.endedAt = new Date().toISOString()
+              history.message =
+                history.status === 'failed'
+                  ? 'Build failed; verified backup retained'
+                  : 'Application and routing verified'
+              progress.state = history.status
+              progress.stage = history.status
+              progress.transferred = 42
+              progress.cancellable = false
+              progress.finishedAt = history.endedAt
+              BrowserWindow.getAllWindows()[0].webContents.send('vps:event', {
+                type: 'website-deployment',
+                operation: progress,
+              })
+            }, 150)
+            value = id
+          } else if (route === 'websites.health')
+            value = {
+              at: new Date().toISOString(),
+              url: 'https://example.test',
+              code: 200,
+              state: 'healthy',
+              detail: 'HTTP 200 from the server.',
+            }
+          else if (route === 'websites.logs') value = 'Bounded fixture application output'
+          else if (route === 'websites.nginx') value = 'Nginx configuration test passed.'
+          else if (route === 'clipboard.readText') value = await clipboard.readText()
           else if (route === 'clipboard.writeText') await clipboard.writeText(input.text as string)
           else if (route === 'app.bootstrap')
             value = {
@@ -361,9 +515,9 @@ test('terminal right-click and shortcuts copy and paste through the system clipb
     const word = page.locator('.xterm-rows').getByText('COPY_FROM_SHELL', { exact: true })
     const selectWord = async () => {
       await expect(word).toBeVisible()
-      const box = (await word.boundingBox())!
-      // xterm's screen overlay receives pointer events for the rendered text.
-      await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+      // Text spans are replaced during selection/cursor repaint; the screen is stable.
+      // The fixture word is on the first row, and this position is inside that word.
+      await page.locator('.xterm-screen').dblclick({ position: { x: 35, y: 8 } })
     }
     const canvas = page.locator('.terminal-canvas')
     const rightClick = () => canvas.click({ button: 'right', position: { x: 35, y: 50 } })
@@ -444,5 +598,152 @@ test('terminal right-click and shortcuts copy and paste through the system clipb
       await app.close()
       await removeTestDirectory(directory, 'vps-workspace-ui-')
     }
+  }
+})
+
+test('websites import, deployment preview, history and restore remain isolated per server', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'vps-workspace-ui-'))
+  const { app, page } = await launch(directory)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  const openWebsites = async () => {
+    await page.getByRole('button', { name: 'Open launcher', exact: true }).click()
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /^Websites & Deployments Discover/ })
+      .click()
+  }
+  try {
+    await page.getByRole('button', { name: 'Files', exact: true }).click()
+    await page.getByRole('row').filter({ hasText: 'notes.txt' }).click()
+    await expect(
+      page.getByRole('button', { name: 'Delete permanently', exact: true }),
+    ).toBeEnabled()
+    await openWebsites()
+    const websites = page.getByRole('region', {
+      name: 'Websites & Deployments window',
+      exact: true,
+    })
+    await expect(
+      websites.getByText('Deployment source not identified — Import or configure website.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      websites.getByRole('button', { name: 'Update website', exact: true }),
+    ).toBeDisabled()
+    await websites.getByRole('button', { name: 'Configure website', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Import website', exact: true })
+    await form.getByLabel('Website name', { exact: true }).fill('Atlas website')
+    await form.getByLabel('Project directory', { exact: true }).fill('/home/demo/project')
+    await form.getByLabel('Deployment adapter', { exact: true }).selectOption('static')
+    await form.getByRole('button', { name: 'Save website', exact: true }).click()
+    await expect(
+      websites.getByRole('heading', { name: 'Atlas website', exact: true }),
+    ).toBeVisible()
+    await websites.getByRole('button', { name: 'Check application health', exact: true }).click()
+    await expect(websites.getByText('healthy · HTTP 200', { exact: true })).toBeVisible()
+    await websites.getByRole('button', { name: 'Files', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Remote path', exact: true })).toHaveValue(
+      '/home/demo/project',
+    )
+    await expect(
+      page.getByRole('button', { name: 'Delete permanently', exact: true }),
+    ).toBeDisabled()
+    await page.getByRole('button', { name: 'Websites & Deployments', exact: true }).click()
+    await websites.getByRole('button', { name: 'Update website', exact: true }).click()
+    const wizard = page.getByRole('dialog', { name: 'Update Atlas website', exact: true })
+    await wizard.getByLabel('Update source', { exact: true }).selectOption('remote')
+    await wizard
+      .getByLabel('Source directory on this server', { exact: true })
+      .fill('/home/demo/unsafe')
+    await wizard.getByRole('button', { name: 'Inspect deployment', exact: true }).click()
+    await expect(wizard.getByText('Deployment blocked', { exact: true })).toBeVisible()
+    await expect(
+      wizard.getByRole('button', { name: 'Back up & deploy', exact: true }),
+    ).toBeDisabled()
+    await wizard.getByRole('button', { name: 'Back', exact: true }).click()
+    await wizard
+      .getByLabel('Source directory on this server', { exact: true })
+      .fill('/home/demo/new-source')
+    await wizard.getByRole('button', { name: 'Inspect deployment', exact: true }).click()
+    await expect(
+      wizard.getByRole('button', { name: 'Back up & deploy', exact: true }),
+    ).toBeDisabled()
+    await wizard.getByRole('checkbox').check()
+    await wizard.getByRole('button', { name: 'Back up & deploy', exact: true }).click()
+    await expect(wizard).toBeHidden()
+    await expect(websites.getByText('Deployment · completed', { exact: true })).toBeVisible()
+    await expect(
+      websites.getByRole('button', { name: 'Restore previous version…', exact: true }),
+    ).toBeEnabled()
+    await websites.getByRole('button', { name: 'Restore previous version…', exact: true }).click()
+    const restore = page.getByRole('dialog', { name: 'Restore application backup', exact: true })
+    await expect(
+      restore.getByRole('button', { name: 'Verify backup & restore…', exact: true }),
+    ).toBeDisabled()
+    await restore.getByRole('checkbox').check()
+    await restore.getByRole('button', { name: 'Verify backup & restore…', exact: true }).click()
+    await expect(restore).toBeHidden()
+    await expect(
+      websites.getByText('Application restore · restored', { exact: true }),
+    ).toBeVisible()
+    await page.screenshot({ path: 'test-results/websites-deployments.png' })
+    await app.evaluate(() => {
+      ;(
+        Reflect.get(globalThis, '__desktopFixture') as { websiteFailNext: boolean }
+      ).websiteFailNext = true
+    })
+    await websites.getByRole('button', { name: 'Update website', exact: true }).click()
+    const rebuild = page.getByRole('dialog', { name: 'Update Atlas website', exact: true })
+    await rebuild.getByLabel('Update method', { exact: true }).selectOption('rebuild')
+    await rebuild.getByRole('button', { name: 'Inspect deployment', exact: true }).click()
+    await rebuild.getByRole('checkbox').check()
+    await rebuild.getByRole('button', { name: 'Back up & deploy', exact: true }).click()
+    await expect(websites.getByText('Deployment · failed', { exact: true })).toBeVisible()
+    await expect(
+      websites.getByRole('button', { name: 'Review backups and recovery', exact: true }),
+    ).toBeVisible()
+    const title = websites.getByLabel('Move Websites & Deployments window', { exact: true })
+    await title.focus()
+    for (let i = 0; i < 28; i++) await page.keyboard.press('Control+Shift+ArrowLeft')
+    await expect.poll(async () => Math.round((await websites.boundingBox())!.width)).toBe(560)
+    expect(
+      await websites
+        .locator('.websites-page')
+        .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    ).toBe(true)
+    await page.screenshot({ path: 'test-results/websites-compact.png' })
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'dark'
+    })
+    await page.screenshot({ path: 'test-results/websites-dark.png' })
+    await websites
+      .getByRole('button', { name: 'Minimize Websites & Deployments', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Websites & Deployments', exact: true }).click()
+    await expect(
+      websites.getByRole('heading', { name: 'Atlas website', exact: true }),
+    ).toBeVisible()
+    await switchServer(page, 'Orion')
+    await openWebsites()
+    const orion = page
+      .getByRole('region', { name: 'Websites & Deployments window', exact: true })
+      .filter({ visible: true })
+    await expect(
+      orion.getByRole('heading', { name: 'Discovered website', exact: true }),
+    ).toBeVisible()
+    await expect(orion.getByText('Atlas website', { exact: true })).toHaveCount(0)
+    await switchServer(page, 'Atlas')
+    await expect(
+      websites.getByRole('heading', { name: 'Atlas website', exact: true }),
+    ).toBeVisible()
+    const deployCalls = await calls(app, 'websites.deploy')
+    expect(deployCalls).toHaveLength(2)
+    expect(deployCalls[0].input).toMatchObject({ sessionId: sessions[0].id, acknowledged: true })
+    expect(errors).toEqual([])
+  } finally {
+    await app.close()
+    await removeTestDirectory(directory, 'vps-workspace-ui-')
   }
 })

@@ -43,6 +43,9 @@ const Applications = lazy(() =>
 const Settings = lazy(() =>
   import('../features/settings/Settings').then((m) => ({ default: m.Settings })),
 )
+const Websites = lazy(() =>
+  import('../features/websites/Websites').then((m) => ({ default: m.Websites })),
+)
 type ServerTab = 'overview' | 'services' | 'monitoring' | 'logs'
 type TerminalRequest = { id: string; cwd: string }
 
@@ -53,6 +56,8 @@ function WindowApp({
   focused,
   request,
   openTerminal,
+  openFolder,
+  folderRequest,
   navigate,
 }: {
   w: DesktopWindow
@@ -61,6 +66,8 @@ function WindowApp({
   focused: boolean
   request?: TerminalRequest
   openTerminal: (s: ServerSession, cwd: string) => void
+  openFolder: (s: ServerSession, path: string) => void
+  folderRequest?: TerminalRequest
   navigate: (module: Module, s: ServerSession) => void
 }) {
   const client = useQueryClient()
@@ -92,6 +99,7 @@ function WindowApp({
         {w.app === 'files' && (
           <Explorer
             session={session}
+            request={folderRequest}
             active={visible && online}
             openTerminal={(cwd) => openTerminal(session, cwd)}
             openEditor={(path) => useDesktop.getState().open('editor', session, path)}
@@ -122,6 +130,15 @@ function WindowApp({
             sessionId={session.id}
             active={visible && online}
             openTerminal={(cwd) => openTerminal(session, cwd)}
+          />
+        )}
+        {w.app === 'websites' && (
+          <Websites
+            session={session}
+            active={visible && online}
+            openFolder={(path) => openFolder(session, path)}
+            openTerminal={(cwd) => openTerminal(session, cwd)}
+            openEditor={(path) => useDesktop.getState().open('editor', session, path)}
           />
         )}
         {w.app === 'server' && (
@@ -196,6 +213,7 @@ export function Desktop({
   }>()
   const [uploading, setUploading] = useState(false)
   const [requests, setRequests] = useState<Record<string, TerminalRequest>>({})
+  const [folderRequests, setFolderRequests] = useState<Record<string, TerminalRequest>>({})
   const attached = useRef(new Set<string>())
   const opened = windows.filter((w) => !w.sessionId || w.sessionId === activeId)
   const online = session?.state === 'CONNECTED'
@@ -207,6 +225,10 @@ export function Desktop({
   const openTerminal = (s: ServerSession, cwd: string) => {
     setRequests((r) => ({ ...r, [s.id]: { id: crypto.randomUUID(), cwd } }))
     useDesktop.getState().open('terminal', s)
+  }
+  const openFolder = (s: ServerSession, path: string) => {
+    setFolderRequests((r) => ({ ...r, [s.id]: { id: crypto.randomUUID(), cwd: path } }))
+    useDesktop.getState().open('files', s)
   }
   const navigate = (module: Module, s: ServerSession) => {
     if (['overview', 'services', 'monitoring', 'logs'].includes(module)) {
@@ -453,6 +475,8 @@ export function Desktop({
                   focused={visible && activeWindow === w.id}
                   request={w.sessionId ? requests[w.sessionId] : undefined}
                   openTerminal={openTerminal}
+                  openFolder={openFolder}
+                  folderRequest={w.sessionId ? folderRequests[w.sessionId] : undefined}
                   navigate={navigate}
                 />
               </Suspense>

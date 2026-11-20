@@ -12,6 +12,14 @@ import type { TransferJob } from '../../domain/transfers/types'
 import type { Input, Route } from '../schemas'
 import type { WorkspaceLayout } from '../workspace'
 import type {
+  DiscoveryResult,
+  WebsiteRecord,
+  DeploymentPreview,
+  DeploymentHistory,
+  DeploymentProgress,
+  HealthResult,
+} from '../../domain/websites/types'
+import type {
   ApplicationOperation,
   Deployment,
   DeploymentStatus,
@@ -19,6 +27,20 @@ import type {
   RemovalPlan,
 } from '../../domain/applications/types'
 export interface Outputs {
+  'websites.discover': DiscoveryResult
+  'websites.save': WebsiteRecord
+  'websites.pickSource': { token: string; name: string } | null
+  'websites.prepare': DeploymentPreview
+  'websites.discard': void
+  'websites.deploy': string | null
+  'websites.cancel': void
+  'websites.operations': DeploymentProgress[]
+  'websites.history': DeploymentHistory[]
+  'websites.health': HealthResult
+  'websites.logs': string
+  'websites.restart': void
+  'websites.restore': string | null
+  'websites.nginx': string
   'app.bootstrap': {
     profiles: ServerProfile[]
     preferences: Preferences
@@ -84,6 +106,7 @@ export interface Outputs {
 }
 export type Result<T> = { ok: true; value: T } | { ok: false; error: AppErrorData }
 export type AppEvent =
+  | { type: 'website-deployment'; operation: DeploymentProgress }
   | { type: 'application-operation'; operation: ApplicationOperation }
   | { type: 'session'; session: ServerSession }
   | { type: 'host-challenge'; challenge: HostChallenge }

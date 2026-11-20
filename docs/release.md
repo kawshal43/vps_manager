@@ -1,5 +1,11 @@
 # Release notes
 
+## Unreleased — Websites & Deployments
+
+Feature branch `kawshal/Buildfeatures` adds an integrated Websites desktop app with Nginx/Compose discovery, manual import, per-server state, details, source-update previews, selected-service Compose builds, versioned static publication, SHA-256 transfer checks, application snapshots, image retention, deployment progress/logs, health/routing verification and confirmed application restore. Sources include native Windows folders/ZIP archives, remote directories, isolated exact-commit Git checkouts and current-source rebuilds. Existing Files/Terminal windows and native confirmation/security boundaries are reused.
+
+The feature blocks ambiguous/shared roots, protected data services, source bind mounts, infrastructure changes and migration indicators. Other standalone runtimes and Apache/Caddy support are inspection/manual import only. Database/media backups or restoration, automatic rollback, retention/deletion jobs, certificates/DNS/Cloudflare changes and zero-downtime guarantees are not provided. No production VPS was accessed. See [the deployment guide](websites-deployments.md) and the validation record. The existing application version and developer credits are unchanged.
+
 ## 0.3.2 — Terminal clipboard
 
 Terminal right-click copies selected text to the system clipboard and clears the selection; right-click without a selection pastes. Ctrl+Shift+C/V, Ctrl+C with a selection, Ctrl+V, Ctrl+Insert and Shift+Insert use the native clipboard. Ctrl+C without a selection continues to interrupt the running command. Paste respects terminal newline and bracketed-paste modes, and input is split into ordered requests for code longer than one IPC message.

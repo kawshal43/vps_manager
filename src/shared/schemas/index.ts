@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { workspaceSchema } from '../workspace'
+import {
+  websiteInputSchema,
+  updateSourceSchema,
+  relativeWebsitePath,
+} from '../../domain/websites/types'
 const id = z.string().uuid()
 export const host = z
   .string()
@@ -78,6 +83,31 @@ export const preferencesSchema = z
   })
   .strict()
 export const schemas = {
+  'websites.discover': session.extend({ elevation: z.enum(['none', 'sudo']) }),
+  'websites.save': session.extend({ websiteId: id.optional(), config: websiteInputSchema }),
+  'websites.pickSource': session.extend({ kind: z.enum(['folder', 'zip']) }),
+  'websites.prepare': session.extend({
+    websiteId: id,
+    method: z.enum(['full', 'partial', 'rebuild']),
+    source: updateSourceSchema,
+    elevation: z.enum(['none', 'sudo']),
+    paths: z.array(relativeWebsitePath).max(100),
+  }),
+  'websites.discard': session.extend({ token: id }),
+  'websites.deploy': session.extend({ token: id, acknowledged: z.boolean() }),
+  'websites.cancel': session.extend({ operationId: id }),
+  'websites.operations': session,
+  'websites.history': session.extend({ websiteId: id }),
+  'websites.health': session.extend({ websiteId: id }),
+  'websites.logs': session.extend({ websiteId: id, elevation: z.enum(['none', 'sudo']) }),
+  'websites.restart': session.extend({ websiteId: id, elevation: z.enum(['none', 'sudo']) }),
+  'websites.restore': session.extend({
+    websiteId: id,
+    historyId: id,
+    elevation: z.enum(['none', 'sudo']),
+    acknowledged: z.literal(true),
+  }),
+  'websites.nginx': session.extend({ reload: z.boolean(), elevation: z.enum(['none', 'sudo']) }),
   'app.bootstrap': z.object({}).strict(),
   'app.preferences': preferencesSchema,
   'app.diagnostics': z.object({}).strict(),

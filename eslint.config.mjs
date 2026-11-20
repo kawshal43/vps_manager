@@ -25,7 +25,12 @@ export default tseslint.config(
   },
   // Control-character rejection is intentional input validation. React Compiler is not enabled.
   {
-    files: ['src/domain/filesystem/policy.ts', 'src/shared/schemas/index.ts'],
+    files: [
+      'src/domain/filesystem/policy.ts',
+      'src/shared/schemas/index.ts',
+      'src/domain/websites/policy.ts',
+      'src/domain/websites/types.ts',
+    ],
     rules: { 'no-control-regex': 'off' },
   },
 )

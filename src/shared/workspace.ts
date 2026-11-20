@@ -5,6 +5,7 @@ export const appIds = [
   'terminal',
   'server',
   'applications',
+  'websites',
   'transfers',
   'settings',
 ] as const
@@ -21,7 +22,7 @@ export type Bounds = z.infer<typeof boundsSchema>
 export const workspaceSchema = z
   .object({
     version: z.literal(1),
-    pinned: z.array(z.enum(appIds)).max(6),
+    pinned: z.array(z.enum(appIds)).max(7),
     windows: z
       .array(
         z
