@@ -1,0 +1,26 @@
+import type { ConnectionState } from './types'
+import { AppError } from '../errors/app-error'
+const next: Record<ConnectionState, ConnectionState[]> = {
+  DISCONNECTED: ['VALIDATING'],
+  VALIDATING: ['CONNECTING', 'CONNECTION_FAILED', 'DISCONNECTING'],
+  CONNECTING: ['VERIFYING_HOST_KEY', 'AUTHENTICATING', 'CONNECTION_FAILED', 'DISCONNECTING'],
+  VERIFYING_HOST_KEY: ['AUTHENTICATING', 'CONNECTION_FAILED', 'DISCONNECTING'],
+  AUTHENTICATING: [
+    'INITIALIZING_SESSION',
+    'AUTHENTICATION_FAILED',
+    'CONNECTION_FAILED',
+    'DISCONNECTING',
+  ],
+  INITIALIZING_SESSION: ['CONNECTED', 'CONNECTION_FAILED', 'DISCONNECTING'],
+  CONNECTED: ['DISCONNECTING', 'CONNECTION_LOST'],
+  CONNECTION_LOST: ['RECONNECTING', 'DISCONNECTING'],
+  RECONNECTING: ['CONNECTING', 'DISCONNECTING', 'CONNECTION_FAILED'],
+  AUTHENTICATION_FAILED: ['DISCONNECTING'],
+  CONNECTION_FAILED: ['DISCONNECTING'],
+  DISCONNECTING: ['DISCONNECTED'],
+}
+export function transition(from: ConnectionState, to: ConnectionState): ConnectionState {
+  if (!next[from].includes(to))
+    throw new AppError('INVALID_REQUEST', `Invalid connection transition: ${from} to ${to}.`)
+  return to
+}
