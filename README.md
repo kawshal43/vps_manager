@@ -6,6 +6,8 @@ Developed by **Nuranova Solutions** — **Kawshal, Shanal and Shehan**. Develope
 
 Version 0.3.0 adds a desktop workspace with a taskbar, launcher, movable/resizable app windows and desktop uploads. Files, terminals and editor drafts stay in their server workspace when switching servers. Ubuntu package management and registered deployments remain available through the launcher. See [validation](docs/validation.md) for the environments actually tested and [release notes](docs/release.md) for remaining release gates.
 
+The `kawshal/Buildfeatures` branch adds **Websites & Deployments**: read-only Nginx/Compose discovery, website import, source-update previews, selected-service Compose builds, static releases, application backups, health checks, logs and explicit restore. Standalone runtime adapters, migrations and database/media backup or restore are not implemented. Read the [supported scope and deployment guide](docs/websites-deployments.md) before using it. This feature is unreleased; the version remains 0.3.2.
+
 ## Run
 
 Requires Windows 10/11 x64 and Node.js 22.12+ (development was verified with Node 24.14.1).
@@ -48,6 +50,7 @@ If version 0.1.0 shows “IPC request origin was rejected” during `npm run dev
 - CPU, memory, swap, root-disk, uptime and load monitoring; real systemd discovery, service details/actions, journal logs, process inspection, listening ports, and confirmed SIGTERM requests.
 - Applications: searchable installed APT/dpkg packages with manual, automatic and optional-priority filters, dependency previews and confirmed uninstall. Register manually deployed app directories, optionally link a systemd service, remove only a saved entry, or confirm permanent deployment-file removal.
 - Theme, concurrency and monitoring preferences; trusted-host inspection; credential deletion; sanitized local diagnostics.
+- Websites & Deployments in the launcher: independent server windows, native folder/ZIP sources, isolated exact-commit Git checkouts, full/partial/rebuild updates, SHA-256 staging verification, application history and restoration points. Persistent data and shared infrastructure are excluded from ordinary updates; unsupported or ambiguous deployments are blocked.
 
 Package removal uses the current account or explicitly chosen existing noninteractive sudo authorization. It blocks protected system components and does not purge or autoremove. Manual deployments must be registered by installation directory; Snap, Docker, pip and npm inventories are not automatically discovered. Read [Applications usage](docs/operations.md#applications) and the [removal authorization design](docs/application-removal-security.md).
 

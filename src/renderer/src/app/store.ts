@@ -8,6 +8,7 @@ export type Module =
   | 'transfers'
   | 'terminal'
   | 'applications'
+  | 'websites'
   | 'services'
   | 'monitoring'
   | 'logs'

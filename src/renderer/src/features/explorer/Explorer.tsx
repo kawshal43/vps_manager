@@ -62,11 +62,13 @@ export function Explorer({
   active,
   openTerminal,
   openEditor,
+  request,
 }: {
   session: ServerSession
   active: boolean
   openTerminal: (cwd: string) => void
   openEditor: (path: string) => void
+  request?: { id: string; cwd: string }
 }) {
   const sessionId = session.id
   const client = useQueryClient()
@@ -92,6 +94,19 @@ export function Explorer({
   const { busy, run } = useAction()
   const scroll = useRef<HTMLDivElement>(null)
   const [columns, setColumns] = useState(5)
+  useEffect(() => {
+    if (request) {
+      setHistory([request.cwd])
+      setIndex(0)
+      setAddress(request.cwd)
+      setSelected([])
+      setAnchor(0)
+      setFilter('')
+      setContext(undefined)
+      setForm(undefined)
+      setProperties(undefined)
+    }
+  }, [request])
   useEffect(() => {
     if (!scroll.current || !active) return
     const observer = new ResizeObserver(([entry]) =>

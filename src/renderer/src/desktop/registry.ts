@@ -1,7 +1,15 @@
-import { Folder, Terminal, Server, Layers, ArrowDownUp, Settings } from 'lucide-react'
+import { Folder, Terminal, Server, Layers, ArrowDownUp, Settings, Globe } from 'lucide-react'
 import type { AppId } from '../../../shared/workspace'
 
 export const apps = {
+  websites: {
+    name: 'Websites & Deployments',
+    icon: Globe,
+    color: 'green',
+    description: 'Discover, update & restore websites',
+    width: 1120,
+    height: 690,
+  },
   files: {
     name: 'Files',
     icon: Folder,

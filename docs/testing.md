@@ -88,6 +88,21 @@ On this Windows host, the previously used stream-optimized cloud-image/differenc
 
 For explicitly authorized production **read-only** validation, `scripts/run-server-smoke.ts HOST --apps-readonly` reads package metadata and APT simulation results; `--apps-ui-readonly` checks the table, search, removal preview and registration form using temporary user data. Both require an already saved/trusted host and read a password through hidden stdin. Neither executes uninstall or saves a deployment on the server. Do not place passwords in arguments or test files.
 
+## Website deployment tests
+
+`tests/unit/websites.test.ts` covers Nginx parsing, conservative proxy/Compose association, command scoping, protected data, traversal/input rejection, content comparisons, local source manifests, ZIP validation and log sanitization. `website-deployments.test.ts` runs the real manager and source-copy/hash code against an in-memory SFTP/SSH fixture: verified backups, image activation/restore, static link publication/restore, failed builds, source/configuration drift, cancellation, disconnection, corrupt transfer/backup data, shared roots, permissions, native-confirmation refusal, multi-server isolation and metadata corruption. `website-command-stream.test.ts` covers UTF-8 packet boundaries and bounded stderr.
+
+The Electron workspace test exercises website import, automatic/manual health checks, Files navigation with stale selections cleared, blocked previews, acknowledgement, deployment/history/restore, a failed-job recovery view, minimize/restore, compact width, dark theme and server switching. `websites-native.spec.ts` uses the real IPC handler to reject invalid/unauthed requests and verifies corrupt website metadata does not prevent application startup. The UI fixture explicitly simulates SSH/deployments; it is not a live VPS qualification.
+
+```powershell
+npx vitest run tests/unit/websites.test.ts tests/unit/website-deployments.test.ts tests/unit/website-command-stream.test.ts
+npm run build
+npx playwright test tests/e2e/workspace.spec.ts --grep "websites import"
+npx playwright test tests/e2e/websites-native.spec.ts
+```
+
+No production server or saved SSH credentials are used. Before production rollout, separately qualify the chosen application on an explicitly authorized disposable Ubuntu/Compose host, including actual image builds, filesystem/web-server permissions, HTTP/TLS routing, timeout behavior and recovery. Database restoration/migrations are outside this implementation. The A Plus TV identifiers in the task are examples, not authorization for a live test.
+
 ## Manual release checks
 
 Verify native picker and drag-and-drop workflows, replacement confirmation choices, changed-key warning readability, keyboard-only context menus, screen reader behavior, high DPI and 960×640 resizing, Windows 11, 10,000-entry folders, multi-GiB transfers, disk-full behavior, abrupt termination, reconnect recovery and extended multi-server sessions. Performance targets depend on real servers and networks; no throughput or memory guarantee is inferred from local fixture tests.

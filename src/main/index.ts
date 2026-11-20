@@ -112,6 +112,21 @@ async function createWindow(): Promise<void> {
   })
   window.on('close', (event) => {
     if (
+      runtime?.websites.runningCount() &&
+      dialog.showMessageBoxSync(window!, {
+        type: 'warning',
+        message: 'Website deployments are still running.',
+        detail:
+          'Closing can interrupt builds or activation. Keep the app open until verification finishes, or inspect server state before recovery after closing.',
+        buttons: ['Keep open', 'Close application'],
+        defaultId: 0,
+        cancelId: 0,
+      }) === 0
+    ) {
+      event.preventDefault()
+      return
+    }
+    if (
       !approvedClose &&
       runtime?.dirtyCount() &&
       dialog.showMessageBoxSync(window!, {

@@ -42,6 +42,12 @@ Saving detects external changes through attributes and a content hash. If there 
 
 Each tab is a real SSH shell with a PTY. Use **Open terminal here** from Files to open in a directory. Terminal text search works on scrollback. Select text and right-click to copy it to the system clipboard. The selection clears after copying; right-click without a selection to paste text from any app. Ctrl+Shift+C or Ctrl+Insert copies; Ctrl+V, Ctrl+Shift+V or Shift+Insert pastes. Ctrl+C copies selected text and otherwise interrupts the running command. Multiline paste follows the shell's bracketed-paste mode. Links ask before opening an HTTP(S) browser destination. User-typed shell commands execute with the connected account’s permissions.
 
+## Websites & Deployments
+
+Open the app from the launcher. Discover the current server's Nginx/Compose hosting, import a verified project mapping, then choose Update website for a native Windows folder/ZIP, isolated exact Git revision, remote source or rebuild. Review the diff, protected resources and blockers; acknowledge application/database limitations and approve the native confirmation. Progress, logs, health and application-only restoration points stay with that server's workspace. Files and Terminal actions reuse the existing desktop apps.
+
+Only selected-service Docker Compose builds and dedicated prebuilt static roots support managed deployment. Standalone Node.js/Java/PHP, Apache/Caddy management, migrations, database/media backups, SSL renewal and automatic DNS/routing changes require manual administration. Application restores do not overwrite current database/media data. Follow [the deployment guide](websites-deployments.md) for prerequisites, storage layout, backup limits, Git access and recovery after interruption.
+
 ## Monitoring, services and applications
 
 Overview/Monitoring reads actual `/proc`, `df`, hostname and OS information. CPU needs two samples, so the first sample says “Sampling”. RAM usage uses MemAvailable. Monitoring polls only while its view is active, pauses in the background using the query library’s visibility behavior, and stops on disconnect.

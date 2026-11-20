@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { Client, utils, type ClientChannel, type SFTPWrapper } from 'ssh2'
+import { StringDecoder } from 'node:string_decoder'
 import type { AppEvent } from '../../shared/contracts/api'
 import type { ConnectionState, HostChallenge, ServerSession } from '../../domain/connection/types'
 import { AppError, mapError } from '../../domain/errors/app-error'
@@ -329,14 +330,21 @@ export class SessionManager {
   dispose(): void {
     for (const id of this.sessions.keys()) this.disconnect(id)
   }
-  exec(id: string, command: string, timeout = 15000, signal?: AbortSignal): Promise<string> {
-    return this.execLive(this.get(id), command, timeout, signal)
+  exec(
+    id: string,
+    command: string,
+    timeout = 15000,
+    signal?: AbortSignal,
+    onOutput?: (text: string) => void,
+  ): Promise<string> {
+    return this.execLive(this.get(id), command, timeout, signal, onOutput)
   }
   private execLive(
     s: LiveSession,
     command: string,
     timeout = 15000,
     signal?: AbortSignal,
+    onOutput?: (text: string) => void,
   ): Promise<string> {
     signal?.throwIfAborted()
     return new Promise((resolve, reject) => {
@@ -395,26 +403,39 @@ export class SessionManager {
         s.channels.add(stream)
         let out = ''
         let length = 0
-        stream.on('data', (chunk: Buffer) => {
+        const stdoutDecoder = new StringDecoder('utf8'),
+          stderrDecoder = new StringDecoder('utf8')
+        const collect = (chunk: Buffer, decoder = stdoutDecoder): void => {
+          if (finished) return
           length += chunk.length
-          if (length > 2 * 1024 * 1024) {
+          if (length > (onOutput ? 16 : 2) * 1024 * 1024) {
             stream.destroy()
             finish(
               new AppError('UNSUPPORTED_OPERATION', 'Remote output exceeded the safety limit.'),
             )
-          } else out += chunk.toString('utf8')
-        })
-        // stderr can contain private command arguments or secrets; do not forward it to logs/UI.
-        stream.stderr.resume()
+          } else {
+            const text = decoder.write(chunk)
+            if (onOutput) onOutput(text)
+            else out += text
+          }
+        }
+        stream.on('data', collect)
+        // Only opted-in streaming callers receive stderr and must redact before publishing it.
+        if (onOutput) stream.stderr.on('data', (chunk: Buffer) => collect(chunk, stderrDecoder))
+        else stream.stderr.resume()
         stream.on('error', (error: Error) => finish(error))
         stream.on('close', (code: number | null) => {
           s.channels.delete(stream)
+          if (finished) return
+          const tail = stdoutDecoder.end() + stderrDecoder.end()
+          if (onOutput && tail) onOutput(tail)
+          else out += tail
           if (code !== 0)
             finish(
               new AppError(
                 'SERVICE_ERROR',
                 `The server command did not succeed (exit ${code ?? 'unknown'}).`,
-                'Check permissions and server state in Terminal. No elevation is attempted.',
+                'Check permissions and server state in Terminal before retrying.',
                 true,
               ),
             )

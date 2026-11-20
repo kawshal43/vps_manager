@@ -8,7 +8,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir } from 'node:fs/promises'
+import { lstat, mkdir, realpath } from 'node:fs/promises'
 import { basename, isAbsolute, posix } from 'node:path'
 import type { AppEvent, Outputs, Result } from '../../shared/contracts/api'
 import { schemas, type Input, type Route } from '../../shared/schemas'
@@ -24,6 +24,8 @@ import { TransferManager, type ResolveConflict } from '../../application/transfe
 import { TerminalManager } from '../../application/terminal/terminal-manager'
 import { Monitoring } from '../../application/monitoring/monitoring'
 import { ApplicationManager } from '../../application/applications/application-manager'
+import { WebsiteManager } from '../../application/websites/website-manager'
+import { WebsiteRepository } from '../../infrastructure/persistence/websites'
 import {
   logsCommand,
   portsCommand,
@@ -44,6 +46,7 @@ export async function registerApi(
   dispose: () => void
   sessions: SessionManager
   transfers: TransferManager
+  websites: WebsiteManager
   flush: () => Promise<void>
   dirtyCount: () => number
 }> {
@@ -57,8 +60,10 @@ export async function registerApi(
     if (
       event.type === 'session' &&
       ['DISCONNECTED', 'CONNECTION_LOST'].includes(event.session.state)
-    )
+    ) {
       transfers?.cancelSession(event.session.id)
+      websites?.disconnect(event.session.id)
+    }
     if (!window.isDestroyed()) window.webContents.send('vps:event', event)
   }
   const sessions = new SessionManager(repository, vault, emit)
@@ -103,6 +108,14 @@ export async function registerApi(
   const terminals = new TerminalManager(sessions, emit)
   const monitoring = new Monitoring(sessions)
   const applications = new ApplicationManager(sessions, repository, confirm, emit)
+  const websiteRepository = new WebsiteRepository(app.getPath('userData'))
+  // Corrupt feature metadata disables Websites; other desktop apps remain available.
+  await websiteRepository.load().catch(() => {})
+  const websites = new WebsiteManager(sessions, websiteRepository, confirm, emit)
+  const websiteSources = new Map<
+    string,
+    { sessionId: string; path: string; zip: boolean; expires: number }
+  >()
   const capabilities = new Map<string, { path: string; kind: 'key' | 'upload'; expires: number }>()
   const grant = (path: string, kind: 'key' | 'upload'): string => {
     const token = randomUUID()
@@ -120,6 +133,65 @@ export async function registerApi(
     return c.path
   }
   const handlers: Handlers = {
+    'websites.discover': (p) => websites.discover(p.sessionId, p.elevation),
+    'websites.save': (p) => websites.register(p.sessionId, p.config, p.websiteId),
+    'websites.pickSource': async (p) => {
+      sessions.get(p.sessionId)
+      const r = await dialog.showOpenDialog(window, {
+        title:
+          p.kind === 'folder' ? 'Select the project source folder' : 'Select a project ZIP archive',
+        properties: [p.kind === 'folder' ? 'openDirectory' : 'openFile'],
+        ...(p.kind === 'zip' ? { filters: [{ name: 'ZIP archives', extensions: ['zip'] }] } : {}),
+      })
+      if (r.canceled || !r.filePaths[0]) return null
+      const selected = await realpath(r.filePaths[0]),
+        attrs = await lstat(selected)
+      if (attrs.isSymbolicLink() || (p.kind === 'folder' ? !attrs.isDirectory() : !attrs.isFile()))
+        throw new AppError('INVALID_PATH', 'Choose a regular folder or ZIP archive.')
+      for (const [token, value] of websiteSources)
+        if (value.expires < Date.now()) websiteSources.delete(token)
+      if (websiteSources.size >= 100)
+        throw new AppError('INVALID_REQUEST', 'Too many source pickers are open.')
+      const token = randomUUID()
+      websiteSources.set(token, {
+        sessionId: p.sessionId,
+        path: selected,
+        zip: p.kind === 'zip',
+        expires: Date.now() + 30 * 60000,
+      })
+      return { token, name: basename(selected) }
+    },
+    'websites.prepare': (p) => {
+      let local: { path: string; zip: boolean } | undefined
+      if (p.source.kind === 'local') {
+        const grant = websiteSources.get(p.source.token)
+        if (!grant || grant.sessionId !== p.sessionId || grant.expires < Date.now())
+          throw new AppError(
+            'INVALID_REQUEST',
+            'The source authorization expired or belongs to another connection. Select it again.',
+          )
+        local = grant
+      }
+      return websites.prepare(
+        p.sessionId,
+        p.websiteId,
+        p.method,
+        p.source,
+        p.elevation,
+        p.paths,
+        local,
+      )
+    },
+    'websites.discard': (p) => websites.discard(p.sessionId, p.token),
+    'websites.deploy': (p) => websites.deploy(p.sessionId, p.token, p.acknowledged),
+    'websites.cancel': (p) => websites.cancel(p.sessionId, p.operationId),
+    'websites.operations': (p) => websites.operations(p.sessionId),
+    'websites.history': (p) => websites.history(p.sessionId, p.websiteId),
+    'websites.health': (p) => websites.health(p.sessionId, p.websiteId),
+    'websites.logs': (p) => websites.logs(p.sessionId, p.websiteId, p.elevation),
+    'websites.restart': (p) => websites.restart(p.sessionId, p.websiteId, p.elevation),
+    'websites.restore': (p) => websites.restore(p.sessionId, p.websiteId, p.historyId, p.elevation),
+    'websites.nginx': (p) => websites.nginxDiagnostic(p.sessionId, p.reload, p.elevation),
     'clipboard.readText': () => clipboard.readText(),
     'clipboard.writeText': (p) => clipboard.writeText(p.text),
     'workspace.load': () => savedWorkspace,
@@ -364,12 +436,16 @@ export async function registerApi(
     )
   })
   return {
-    flush: () => workspace.flush(),
+    flush: async () => {
+      await Promise.all([workspace.flush(), websiteRepository.flush()])
+    },
     dirtyCount: () => dirtyEditors,
     sessions,
     transfers,
+    websites,
     dispose: () => {
       transfers.cancelAll()
+      websites.dispose()
       sessions.dispose()
       ipcMain.removeHandler('vps:invoke')
       ipcMain.removeHandler('vps:drop')
